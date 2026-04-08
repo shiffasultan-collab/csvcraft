@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSVCraft — CSV Viewer, Converter & Cleaner</title>
+<meta name="description" content="Free in-browser CSV tool. View, filter, convert to JSON/Excel, deduplicate and clean CSV files. No upload, 100% private.">
+<!-- PapaParse for CSV parsing -->
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<!-- SheetJS for Excel export -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3250;
+    --accent: #6c63ff;
+    --accent2: #a78bfa;
+    --text: #e2e8f0;
+    --muted: #8892b0;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --radius: 10px;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --mono: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  /* Header */
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0.75rem 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+  .logo { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; color: var(--text); }
+  .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+  .logo-text { font-size: 1.2rem; font-weight: 700; }
+  .logo-text span { color: var(--accent2); }
+  nav { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 0.85rem; padding: 0.3rem 0.6rem; border-radius: 6px; transition: color 0.2s, background 0.2s; }
+  nav a:hover { color: var(--text); background: var(--surface2); }
+  .pro-badge { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; padding: 0.25rem 0.6rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; cursor: pointer; border: none; }
+
+  /* Hero */
+  .hero { text-align: center; padding: 2.5rem 1rem 1.5rem; }
+  .hero h1 { font-size: clamp(1.6rem, 4vw, 2.4rem); font-weight: 800; margin-bottom: 0.5rem; }
+  .hero h1 span { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .hero p { color: var(--muted); font-size: 1rem; max-width: 520px; margin: 0 auto 1.2rem; }
+  .badges { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
+  .badge { background: var(--surface2); border: 1px solid var(--border); padding: 0.25rem 0.7rem; border-radius: 20px; font-size: 0.75rem; color: var(--muted); }
+
+  /* Main layout */
+  .container { max-width: 1400px; margin: 0 auto; padding: 0 1rem 2rem; }
+
+  /* Drop zone */
+  .drop-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 2.5rem; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; margin-bottom: 1rem; position: relative; }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(108,99,255,0.05); }
+  .drop-zone .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+  .drop-zone h3 { font-size: 1rem; margin-bottom: 0.25rem; }
+  .drop-zone p { color: var(--muted); font-size: 0.85rem; }
+  .drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .or-divider { text-align: center; color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0; position: relative; }
+  .or-divider::before, .or-divider::after { content: ''; position: absolute; top: 50%; width: 45%; height: 1px; background: var(--border); }
+  .or-divider::before { left: 0; }
+  .or-divider::after { right: 0; }
+  .paste-area { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1rem; color: var(--text); font-family: var(--mono); font-size: 0.82rem; resize: vertical; min-height: 90px; outline: none; transition: border-color 0.2s; }
+  .paste-area:focus { border-color: var(--accent); }
+  .parse-btn { margin-top: 0.75rem; background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0.6rem 1.4rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+  .parse-btn:hover { opacity: 0.85; }
+
+  /* Toolbar */
+  .toolbar { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.6rem 0.8rem; }
+  .toolbar input[type=text] { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 0.35rem 0.7rem; color: var(--text); font-size: 0.85rem; outline: none; flex: 1; min-width: 160px; transition: border-color 0.2s; }
+  .toolbar input[type=text]:focus { border-color: var(--accent); }
+  .tb-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 0.35rem 0.8rem; color: var(--text); font-size: 0.82rem; cursor: pointer; white-space: nowrap; transition: background 0.2s, border-color 0.2s; }
+  .tb-btn:hover { background: var(--border); }
+  .tb-btn.active { border-color: var(--accent); color: var(--accent2); }
+  .tb-sep { width: 1px; height: 24px; background: var(--border); }
+  .tb-label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+
+  /* Stats bar */
+  .stats-bar { display: flex; gap: 1.5rem; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.6rem 1rem; margin-bottom: 0.75rem; font-size: 0.82rem; }
+  .stat-item { display: flex; flex-direction: column; }
+  .stat-label { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-value { color: var(--text); font-weight: 600; font-size: 0.9rem; }
+
+  /* Tab bar */
+  .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 0; background: var(--surface); border-radius: var(--radius) var(--radius) 0 0; border: 1px solid var(--border); overflow: hidden; }
+  .tab { padding: 0.65rem 1.2rem; font-size: 0.85rem; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; transition: color 0.2s, background 0.2s; background: transparent; border: none; }
+  .tab:hover { color: var(--text); background: var(--surface2); }
+  .tab.active { color: var(--accent2); border-bottom: 2px solid var(--accent); background: var(--surface2); }
+  .tab-content { border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius) var(--radius); background: var(--surface); }
+  .tab-pane { display: none; padding: 0; }
+  .tab-pane.active { display: block; }
+
+  /* Table */
+  .table-wrapper { overflow: auto; max-height: 500px; border-radius: 0 0 var(--radius) var(--radius); }
+  .csv-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .csv-table th { position: sticky; top: 0; background: var(--surface2); padding: 0.5rem 0.75rem; text-align: left; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none; }
+  .csv-table th:hover { color: var(--accent2); }
+  .csv-table th .sort-icon { margin-left: 4px; font-size: 0.7rem; opacity: 0.5; }
+  .csv-table th.sorted-asc .sort-icon::after { content: '▲'; }
+  .csv-table th.sorted-desc .sort-icon::after { content: '▼'; }
+  .csv-table th:not(.sorted-asc):not(.sorted-desc) .sort-icon::after { content: '⇅'; }
+  .csv-table td { padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--border); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.8rem; }
+  .csv-table tr:hover td { background: var(--surface2); }
+  .csv-table tr:last-child td { border-bottom: none; }
+  .empty-badge { display: inline-block; background: var(--surface2); color: var(--muted); font-size: 0.7rem; border-radius: 4px; padding: 0.1rem 0.4rem; font-style: italic; }
+  .row-num { color: var(--muted); font-size: 0.72rem; user-select: none; min-width: 36px; }
+
+  /* Code output */
+  .code-output { background: var(--bg); border-radius: 0 0 var(--radius) var(--radius); padding: 1rem; font-family: var(--mono); font-size: 0.8rem; line-height: 1.6; color: var(--accent2); overflow: auto; max-height: 500px; white-space: pre; }
+  .output-toolbar { display: flex; gap: 0.5rem; padding: 0.6rem 0.8rem; background: var(--surface2); border-bottom: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
+  .copy-btn { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 0.3rem 0.8rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+  .copy-btn:hover { opacity: 0.85; }
+  .copy-btn.copied { background: var(--success); }
+  .dl-btn { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 0.3rem 0.8rem; font-size: 0.8rem; cursor: pointer; transition: background 0.2s; }
+  .dl-btn:hover { background: var(--border); }
+
+  /* Stats pane */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; padding: 0.8rem; }
+  .stat-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; }
+  .stat-card h4 { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+  .stat-card .big { font-size: 1.5rem; font-weight: 700; color: var(--accent2); }
+  .stat-card .detail { font-size: 0.78rem; color: var(--muted); margin-top: 0.2rem; }
+  .col-stats-select { width: 100%; max-width: 320px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 0.4rem 0.6rem; font-size: 0.85rem; outline: none; margin: 0.8rem; }
+  .col-stat-row { display: flex; gap: 0.5rem; align-items: center; font-size: 0.82rem; padding: 0.2rem 0; }
+  .col-stat-row .k { color: var(--muted); width: 120px; flex-shrink: 0; }
+  .col-stat-row .v { color: var(--text); font-family: var(--mono); font-weight: 600; }
+
+  /* Filter pane */
+  .filter-panel { padding: 0.8rem; display: flex; flex-direction: column; gap: 0.6rem; }
+  .filter-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  .filter-row select, .filter-row input { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 0.4rem 0.7rem; font-size: 0.85rem; outline: none; }
+  .filter-row select:focus, .filter-row input:focus { border-color: var(--accent); }
+  .filter-row button { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 0.4rem 0.9rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+  .filter-row button.del { background: var(--danger); padding: 0.4rem 0.6rem; }
+  .add-filter-btn { background: var(--surface2); border: 1px dashed var(--border); color: var(--muted); border-radius: 6px; padding: 0.4rem 0.9rem; cursor: pointer; font-size: 0.82rem; width: fit-content; transition: border-color 0.2s; }
+  .add-filter-btn:hover { border-color: var(--accent); color: var(--accent2); }
+
+  /* Dedup pane */
+  .dedup-panel { padding: 0.8rem; }
+  .dedup-panel h3 { font-size: 0.9rem; margin-bottom: 0.5rem; }
+  .dedup-panel p { color: var(--muted); font-size: 0.82rem; margin-bottom: 0.8rem; }
+  .col-checkboxes { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.8rem; }
+  .col-check-label { display: flex; align-items: center; gap: 0.3rem; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.6rem; font-size: 0.82rem; cursor: pointer; transition: border-color 0.2s; }
+  .col-check-label:hover { border-color: var(--accent); }
+  .col-check-label input:checked + span { color: var(--accent2); }
+  .dedup-result { margin-top: 0.6rem; font-size: 0.85rem; color: var(--success); }
+
+  /* Footer */
+  .footer-links { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; padding: 1.5rem 1rem; border-top: 1px solid var(--border); margin-top: 2rem; }
+  .footer-links a { color: var(--muted); text-decoration: none; font-size: 0.8rem; transition: color 0.2s; }
+  .footer-links a:hover { color: var(--accent2); }
+  .footer-links a.current { color: var(--accent2); font-weight: 600; }
+
+  /* Empty state */
+  .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+  .empty-state .big-icon { font-size: 3rem; margin-bottom: 0.5rem; }
+  .empty-state h3 { font-size: 1rem; color: var(--text); margin-bottom: 0.25rem; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 1rem; font-size: 0.85rem; color: var(--text); box-shadow: 0 4px 20px rgba(0,0,0,0.4); z-index: 999; opacity: 0; transform: translateY(10px); transition: opacity 0.3s, transform 0.3s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: none; }
+  .toast.success { border-color: var(--success); }
+  .toast.error { border-color: var(--danger); }
+
+  /* Pro modal */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 2rem; max-width: 420px; width: 90%; text-align: center; }
+  .modal h2 { font-size: 1.3rem; margin-bottom: 0.5rem; }
+  .modal h2 span { color: var(--accent2); }
+  .modal p { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.2rem; }
+  .modal ul { text-align: left; list-style: none; padding: 0; margin: 0 0 1.5rem; display: flex; flex-direction: column; gap: 0.4rem; }
+  .modal ul li::before { content: '✓ '; color: var(--success); font-weight: 700; }
+  .modal ul li { font-size: 0.85rem; color: var(--muted); }
+  .modal .cta { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; border: none; border-radius: 8px; padding: 0.75rem 1.5rem; font-size: 1rem; font-weight: 700; cursor: pointer; width: 100%; margin-bottom: 0.5rem; }
+  .modal .close-modal { background: none; border: none; color: var(--muted); font-size: 0.8rem; cursor: pointer; }
+
+  @media (max-width: 600px) {
+    .toolbar { padding: 0.5rem; }
+    .tb-sep, .tb-label { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="#"><span class="logo-icon">📊</span><span class="logo-text">CSV<span>Craft</span></span></a>
+  <nav>
+    <a href="https://shiffasultan-collab.github.io/jsoncraft/" target="_blank">JSONCraft</a>
+    <a href="https://shiffasultan-collab.github.io/jwtcraft/" target="_blank">JWTCraft</a>
+    <a href="https://shiffasultan-collab.github.io/hashcraft/" target="_blank">HashCraft</a>
+    <a href="https://shiffasultan-collab.github.io/urlcraft/" target="_blank">URLCraft</a>
+    <a href="https://shiffasultan-collab.github.io/regexpal/" target="_blank">RegexPal</a>
+    <button class="pro-badge" onclick="openModal()">✨ Pro — $5/mo</button>
+  </nav>
+</header>
+
+<div class="hero">
+  <h1>Your CSV <span>Swiss Army Knife</span></h1>
+  <p>View, filter, convert and clean CSV files — 100% in-browser. No uploads. No accounts. Total privacy.</p>
+  <div class="badges">
+    <span class="badge">🔒 100% Client-Side</span>
+    <span class="badge">📋 View & Filter</span>
+    <span class="badge">🔄 → JSON / Excel</span>
+    <span class="badge">🧹 Deduplicate</span>
+    <span class="badge">📊 Column Stats</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Drop zone -->
+  <div class="drop-zone" id="dropZone">
+    <div class="icon">📂</div>
+    <h3>Drop a CSV file here</h3>
+    <p>or click to browse</p>
+    <input type="file" id="fileInput" accept=".csv,.tsv,.txt">
+  </div>
+
+  <div class="or-divider">or paste CSV text</div>
+  <textarea class="paste-area" id="pasteArea" placeholder="id,name,email&#10;1,Alice,alice@example.com&#10;2,Bob,bob@example.com&#10;3,Charlie,charlie@example.com"></textarea>
+  <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem">
+    <button class="parse-btn" onclick="parseInput()">Parse CSV</button>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;color:var(--muted);cursor:pointer">
+      <input type="checkbox" id="hasHeader" checked> Has header row
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;color:var(--muted);cursor:pointer;margin-left:0.5rem">
+      Delimiter:
+      <select id="delimSelect" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:0.2rem 0.4rem;font-size:0.82rem;outline:none;">
+        <option value="auto">Auto</option>
+        <option value=",">Comma</option>
+        <option value="	">Tab</option>
+        <option value=";">Semicolon</option>
+        <option value="|">Pipe</option>
+      </select>
+    </label>
+  </div>
+
+  <!-- Results (hidden until data loaded) -->
+  <div id="results" style="display:none;margin-top:1.5rem">
+
+    <!-- Stats bar -->
+    <div class="stats-bar">
+      <div class="stat-item"><span class="stat-label">Rows</span><span class="stat-value" id="statRows">0</span></div>
+      <div class="stat-item"><span class="stat-label">Columns</span><span class="stat-value" id="statCols">0</span></div>
+      <div class="stat-item"><span class="stat-label">Showing</span><span class="stat-value" id="statShowing">0</span></div>
+      <div class="stat-item"><span class="stat-label">File Size</span><span class="stat-value" id="statSize">—</span></div>
+      <div class="stat-item"><span class="stat-label">Duplicates</span><span class="stat-value" id="statDups">—</span></div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <input type="text" id="searchBox" placeholder="🔍 Search all columns…" oninput="applyFilters()">
+      <span class="tb-sep"></span>
+      <span class="tb-label">Export:</span>
+      <button class="tb-btn" onclick="downloadCSV()">⬇ CSV</button>
+      <button class="tb-btn" onclick="downloadExcel()">⬇ Excel</button>
+      <button class="tb-btn" onclick="switchTab('json')">→ JSON</button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn" onclick="clearData()">✕ Clear</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tab-bar">
+      <button class="tab active" onclick="switchTab('table')" id="tab-table">📋 Table</button>
+      <button class="tab" onclick="switchTab('json')" id="tab-json">{ } JSON</button>
+      <button class="tab" onclick="switchTab('stats')" id="tab-stats">📊 Stats</button>
+      <button class="tab" onclick="switchTab('filter')" id="tab-filter">🔧 Filter</button>
+      <button class="tab" onclick="switchTab('dedup')" id="tab-dedup">🧹 Dedup</button>
+    </div>
+
+    <div class="tab-content">
+
+      <!-- Table Tab -->
+      <div class="tab-pane active" id="pane-table">
+        <div class="table-wrapper">
+          <table class="csv-table" id="csvTable">
+            <thead id="csvHead"></thead>
+            <tbody id="csvBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- JSON Tab -->
+      <div class="tab-pane" id="pane-json">
+        <div class="output-toolbar">
+          <button class="copy-btn" id="copyJsonBtn" onclick="copyOutput('jsonOutput','copyJsonBtn')">Copy JSON</button>
+          <button class="dl-btn" onclick="downloadJSON()">⬇ Download JSON</button>
+          <span style="color:var(--muted);font-size:0.8rem;margin-left:auto" id="jsonRowCount"></span>
+        </div>
+        <pre class="code-output" id="jsonOutput"></pre>
+      </div>
+
+      <!-- Stats Tab -->
+      <div class="tab-pane" id="pane-stats">
+        <select class="col-stats-select" id="colStatsSelect" onchange="renderColStats()">
+          <option value="">Select a column to analyse…</option>
+        </select>
+        <div id="colStatsOutput" style="padding:0 0.8rem 0.8rem"></div>
+        <div class="stats-grid" id="overallStats"></div>
+      </div>
+
+      <!-- Filter Tab -->
+      <div class="tab-pane" id="pane-filter">
+        <div class="filter-panel">
+          <div style="font-size:0.85rem;color:var(--muted)">Add row-level filters. Multiple filters are AND-combined.</div>
+          <div id="filterRows"></div>
+          <button class="add-filter-btn" onclick="addFilterRow()">+ Add Filter</button>
+          <div style="display:flex;gap:0.5rem;margin-top:0.3rem">
+            <button onclick="applyFilters()" style="background:var(--accent);color:white;border:none;border-radius:6px;padding:0.4rem 0.9rem;cursor:pointer;font-size:0.85rem;font-weight:600">Apply Filters</button>
+            <button onclick="clearFilters()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.4rem 0.9rem;cursor:pointer;font-size:0.85rem">Clear All</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dedup Tab -->
+      <div class="tab-pane" id="pane-dedup">
+        <div class="dedup-panel">
+          <h3>Remove Duplicate Rows</h3>
+          <p>Select columns to check for duplicates (leave all unchecked to compare entire rows):</p>
+          <div class="col-checkboxes" id="dedupCols"></div>
+          <div style="display:flex;gap:0.5rem">
+            <button onclick="runDedup()" style="background:var(--accent);color:white;border:none;border-radius:6px;padding:0.5rem 1.2rem;cursor:pointer;font-size:0.85rem;font-weight:600">Remove Duplicates</button>
+            <button onclick="findDups()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.5rem 1rem;cursor:pointer;font-size:0.82rem">Count Duplicates First</button>
+          </div>
+          <div class="dedup-result" id="dedupResult"></div>
+        </div>
+      </div>
+
+    </div><!-- tab-content -->
+  </div><!-- results -->
+
+  <!-- Empty state (shown before data) -->
+  <div id="emptyState" class="empty-state" style="margin-top:2rem">
+    <div class="big-icon">📊</div>
+    <h3>No CSV loaded yet</h3>
+    <p>Drop a file above, paste CSV text, or try the sample below</p>
+    <button onclick="loadSample()" class="parse-btn" style="margin-top:0.75rem">Load Sample Data</button>
+  </div>
+
+  <!-- Footer links (tool network) -->
+  <div class="footer-links">
+    <a href="https://shiffasultan-collab.github.io/csvcraft/" class="current">📊 CSVCraft</a>
+    <a href="https://shiffasultan-collab.github.io/jsoncraft/" target="_blank">{ } JSONCraft</a>
+    <a href="https://shiffasultan-collab.github.io/jwtcraft/" target="_blank">🔑 JWTCraft</a>
+    <a href="https://shiffasultan-collab.github.io/hashcraft/" target="_blank"># HashCraft</a>
+    <a href="https://shiffasultan-collab.github.io/urlcraft/" target="_blank">🔗 URLCraft</a>
+    <a href="https://shiffasultan-collab.github.io/regexpal/" target="_blank">🔍 RegexPal</a>
+    <a href="https://shiffasultan-collab.github.io/jsoncraft/" target="_blank">⚙️ EnvDiff</a>
+    <a href="https://shiffasultan-collab.github.io/cronhelper/" target="_blank">⏰ CronHelper</a>
+    <a href="https://shiffasultan-collab.github.io/readmecraft/" target="_blank">📝 ReadmeCraft</a>
+    <a href="https://shiffasultan-collab.github.io/commitcraft/" target="_blank">💬 CommitCraft</a>
+  </div>
+
+</div>
+
+<!-- Pro Modal -->
+<div class="modal-bg" id="proModal">
+  <div class="modal">
+    <h2>✨ CSVCraft <span>Pro</span></h2>
+    <p>Power-user features for data pros, analysts and marketers.</p>
+    <ul>
+      <li>Unlimited rows (free tier: 500)</li>
+      <li>Bulk column rename & reorder</li>
+      <li>Save & restore sessions</li>
+      <li>Multi-file merge (append/join)</li>
+      <li>Custom date/number formatting</li>
+      <li>Team workspace sharing</li>
+      <li>Priority support</li>
+    </ul>
+    <button class="cta" onclick="window.open('#gumroad','_blank')">Get Pro — $5/mo</button>
+    <button class="close-modal" onclick="closeModal()">No thanks, I'll stay on free</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let allRows = [];    // all parsed rows (objects)
+let headers = [];    // column names
+let filteredRows = []; // after filters
+let sortCol = null;
+let sortDir = 1;
+let filters = [];    // [{col, op, val}]
+let fileSize = 0;
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+function toast(msg, type='success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + type;
+  setTimeout(() => el.className = 'toast', 2200);
+}
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function formatSize(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(2) + ' MB';
+}
+
+// ── Parse ──────────────────────────────────────────────────────────────────
+function parseInput() {
+  const text = document.getElementById('pasteArea').value.trim();
+  if (!text) { toast('Nothing to parse!','error'); return; }
+  fileSize = new Blob([text]).size;
+  parseCsv(text);
+}
+
+function parseCsv(text) {
+  const delimVal = document.getElementById('delimSelect').value;
+  const hasHeader = document.getElementById('hasHeader').checked;
+  const config = {
+    header: hasHeader,
+    skipEmptyLines: true,
+    transformHeader: h => h.trim()
+  };
+  if (delimVal !== 'auto') config.delimiter = delimVal;
+  const result = Papa.parse(text, config);
+  if (result.errors.length && !result.data.length) {
+    toast('Parse error: ' + result.errors[0].message, 'error'); return;
+  }
+  if (!hasHeader) {
+    // Create column names col_1, col_2…
+    const maxLen = Math.max(...result.data.map(r => r.length));
+    headers = Array.from({length: maxLen}, (_, i) => 'col_' + (i+1));
+    allRows = result.data.map(r => {
+      const obj = {};
+      headers.forEach((h, i) => obj[h] = r[i] ?? '');
+      return obj;
+    });
+  } else {
+    headers = result.meta.fields || [];
+    allRows = result.data;
+  }
+  filters = [];
+  sortCol = null;
+  filteredRows = [...allRows];
+  initUI();
+  toast('✅ Parsed ' + allRows.length + ' rows, ' + headers.length + ' columns');
+}
+
+// ── File drop ──────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  fileSize = file.size;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById('pasteArea').value = ev.target.result;
+    parseCsv(ev.target.result);
+  };
+  reader.readAsText(file);
+});
+
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  fileSize = file.size;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById('pasteArea').value = ev.target.result;
+    parseCsv(ev.target.result);
+  };
+  reader.readAsText(file);
+});
+
+// ── Init UI after parse ────────────────────────────────────────────────────
+function initUI() {
+  document.getElementById('results').style.display = '';
+  document.getElementById('emptyState').style.display = 'none';
+  buildTableHeader();
+  buildFilterRowOptions();
+  buildDedupCheckboxes();
+  buildColStatsSelect();
+  applyFilters();
+  switchTab('table');
+  renderOverallStats();
+}
+
+function buildTableHeader() {
+  const th = document.getElementById('csvHead');
+  let html = '<tr><th class="row-num">#</th>';
+  headers.forEach(h => {
+    html += `<th onclick="sortBy('${escHtml(h)}')" data-col="${escHtml(h)}">${escHtml(h)}<span class="sort-icon"></span></th>`;
+  });
+  th.innerHTML = html + '</tr>';
+}
+
+// ── Render table ───────────────────────────────────────────────────────────
+function renderTable() {
+  const tbody = document.getElementById('csvBody');
+  if (!filteredRows.length) {
+    tbody.innerHTML = '<tr><td colspan="' + (headers.length+1) + '" style="text-align:center;padding:2rem;color:var(--muted)">No rows match the current filters</td></tr>';
+    return;
+  }
+  const limit = 2000;
+  const rows = filteredRows.slice(0, limit);
+  let html = '';
+  rows.forEach((row, i) => {
+    html += '<tr><td class="row-num">' + (i+1) + '</td>';
+    headers.forEach(h => {
+      const v = row[h] ?? '';
+      html += v === '' ? '<td><span class="empty-badge">empty</span></td>' : '<td title="' + escHtml(v) + '">' + escHtml(v) + '</td>';
+    });
+    html += '</tr>';
+  });
+  if (filteredRows.length > limit) {
+    html += '<tr><td colspan="' + (headers.length+1) + '" style="text-align:center;padding:0.5rem;color:var(--muted);font-size:0.78rem">Showing first ' + limit + ' of ' + filteredRows.length + ' rows — export to see all</td></tr>';
+  }
+  tbody.innerHTML = html;
+}
+
+// ── Sort ───────────────────────────────────────────────────────────────────
+function sortBy(col) {
+  if (sortCol === col) sortDir *= -1;
+  else { sortCol = col; sortDir = 1; }
+  filteredRows.sort((a, b) => {
+    const av = a[col] ?? '', bv = b[col] ?? '';
+    const an = parseFloat(av), bn = parseFloat(bv);
+    if (!isNaN(an) && !isNaN(bn)) return (an - bn) * sortDir;
+    return av.localeCompare(bv) * sortDir;
+  });
+  // Update header classes
+  document.querySelectorAll('#csvHead th').forEach(th => {
+    th.classList.remove('sorted-asc','sorted-desc');
+    if (th.dataset.col === col) th.classList.add(sortDir === 1 ? 'sorted-asc' : 'sorted-desc');
+  });
+  renderTable();
+  updateStats();
+}
+
+// ── Filters ────────────────────────────────────────────────────────────────
+function applyFilters() {
+  const search = document.getElementById('searchBox').value.toLowerCase();
+  // Collect UI filters
+  const uiFilters = [];
+  document.querySelectorAll('.filter-row-item').forEach(row => {
+    const col = row.querySelector('.filter-col').value;
+    const op = row.querySelector('.filter-op').value;
+    const val = row.querySelector('.filter-val').value.toLowerCase();
+    if (col && val) uiFilters.push({col, op, val});
+  });
+
+  filteredRows = allRows.filter(row => {
+    // Global search
+    if (search) {
+      const match = headers.some(h => String(row[h] ?? '').toLowerCase().includes(search));
+      if (!match) return false;
+    }
+    // Column filters
+    for (const f of uiFilters) {
+      const v = String(row[f.col] ?? '').toLowerCase();
+      if (f.op === 'contains' && !v.includes(f.val)) return false;
+      if (f.op === 'not_contains' && v.includes(f.val)) return false;
+      if (f.op === 'equals' && v !== f.val) return false;
+      if (f.op === 'starts' && !v.startsWith(f.val)) return false;
+      if (f.op === 'ends' && !v.endsWith(f.val)) return false;
+      if (f.op === 'empty' && v !== '') return false;
+      if (f.op === 'not_empty' && v === '') return false;
+    }
+    return true;
+  });
+
+  // Re-sort if needed
+  if (sortCol) {
+    filteredRows.sort((a, b) => {
+      const av = a[sortCol] ?? '', bv = b[sortCol] ?? '';
+      const an = parseFloat(av), bn = parseFloat(bv);
+      if (!isNaN(an) && !isNaN(bn)) return (an - bn) * sortDir;
+      return av.localeCompare(bv) * sortDir;
+    });
+  }
+
+  renderTable();
+  updateStats();
+  updateJsonOutput();
+}
+
+function updateStats() {
+  document.getElementById('statRows').textContent = allRows.length;
+  document.getElementById('statCols').textContent = headers.length;
+  document.getElementById('statShowing').textContent = filteredRows.length;
+  document.getElementById('statSize').textContent = fileSize ? formatSize(fileSize) : '—';
+  // Count dups
+  const seen = new Set();
+  let dups = 0;
+  allRows.forEach(row => {
+    const key = headers.map(h => row[h] ?? '').join('\x00');
+    if (seen.has(key)) dups++;
+    else seen.add(key);
+  });
+  document.getElementById('statDups').textContent = dups;
+}
+
+// ── JSON Output ────────────────────────────────────────────────────────────
+function updateJsonOutput() {
+  const rows = filteredRows;
+  document.getElementById('jsonRowCount').textContent = rows.length + ' rows';
+  document.getElementById('jsonOutput').textContent = JSON.stringify(rows, null, 2);
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('pane-' + name).classList.add('active');
+  if (name === 'json') updateJsonOutput();
+  if (name === 'stats') renderColStats();
+}
+
+// ── Copy / Download ────────────────────────────────────────────────────────
+function copyOutput(elId, btnId) {
+  const text = document.getElementById(elId).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById(btnId);
+    btn.classList.add('copied');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = btn.textContent.replace('✓ Copied!', 'Copy JSON'); }, 1800);
+    toast('Copied to clipboard ✓');
+  });
+}
+
+function downloadCSV() {
+  const csv = Papa.unparse(filteredRows, {columns: headers});
+  downloadBlob(csv, 'csvcraft-export.csv', 'text/csv');
+}
+
+function downloadJSON() {
+  const json = JSON.stringify(filteredRows, null, 2);
+  downloadBlob(json, 'csvcraft-export.json', 'application/json');
+}
+
+function downloadExcel() {
+  if (typeof XLSX === 'undefined') { toast('Excel library not loaded', 'error'); return; }
+  const ws = XLSX.utils.json_to_sheet(filteredRows, {header: headers});
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'CSVCraft');
+  XLSX.writeFile(wb, 'csvcraft-export.xlsx');
+  toast('Excel file downloaded ✓');
+}
+
+function downloadBlob(content, filename, mime) {
+  const blob = new Blob([content], {type: mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  toast('Downloaded ' + filename + ' ✓');
+}
+
+// ── Stats Tab ──────────────────────────────────────────────────────────────
+function buildColStatsSelect() {
+  const sel = document.getElementById('colStatsSelect');
+  sel.innerHTML = '<option value="">Select a column to analyse…</option>';
+  headers.forEach(h => {
+    const opt = document.createElement('option');
+    opt.value = h; opt.textContent = h;
+    sel.appendChild(opt);
+  });
+}
+
+function renderOverallStats() {
+  const el = document.getElementById('overallStats');
+  const totalCells = allRows.length * headers.length;
+  let emptyCells = 0;
+  allRows.forEach(r => headers.forEach(h => { if ((r[h] ?? '') === '') emptyCells++; }));
+  el.innerHTML = `
+    <div class="stat-card"><h4>Total Rows</h4><div class="big">${allRows.length}</div></div>
+    <div class="stat-card"><h4>Total Columns</h4><div class="big">${headers.length}</div></div>
+    <div class="stat-card"><h4>Total Cells</h4><div class="big">${totalCells.toLocaleString()}</div></div>
+    <div class="stat-card"><h4>Empty Cells</h4><div class="big" style="color:var(--warning)">${emptyCells}</div><div class="detail">${((emptyCells/totalCells)*100).toFixed(1)}% of total</div></div>
+  `;
+}
+
+function renderColStats() {
+  const col = document.getElementById('colStatsSelect').value;
+  const out = document.getElementById('colStatsOutput');
+  if (!col) { out.innerHTML = ''; return; }
+  const vals = allRows.map(r => r[col] ?? '');
+  const nonEmpty = vals.filter(v => v !== '');
+  const nums = nonEmpty.map(v => parseFloat(v)).filter(n => !isNaN(n));
+  const uniqueVals = [...new Set(vals)];
+
+  let html = '<div style="display:flex;flex-direction:column;gap:0.2rem;padding:0.5rem 0;border-bottom:1px solid var(--border);margin-bottom:0.8rem">';
+  const rows = [
+    ['Total values', vals.length],
+    ['Non-empty', nonEmpty.length],
+    ['Empty', vals.length - nonEmpty.length],
+    ['Unique values', uniqueVals.length],
+  ];
+  if (nums.length) {
+    const sum = nums.reduce((a,b)=>a+b,0);
+    const mean = sum/nums.length;
+    const sorted = [...nums].sort((a,b)=>a-b);
+    const mid = Math.floor(sorted.length/2);
+    const median = sorted.length%2 ? sorted[mid] : (sorted[mid-1]+sorted[mid])/2;
+    rows.push(['Min', Math.min(...nums).toLocaleString()]);
+    rows.push(['Max', Math.max(...nums).toLocaleString()]);
+    rows.push(['Sum', sum.toLocaleString(undefined,{maximumFractionDigits:4})]);
+    rows.push(['Mean', mean.toFixed(4)]);
+    rows.push(['Median', median.toFixed(4)]);
+  }
+  rows.forEach(([k,v]) => {
+    html += `<div class="col-stat-row"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  });
+  html += '</div>';
+
+  // Top values
+  const freq = {};
+  vals.forEach(v => { if (v) freq[v] = (freq[v]||0)+1; });
+  const top = Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  if (top.length) {
+    html += '<div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.4rem">Top Values</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:0.2rem">';
+    top.forEach(([v,c]) => {
+      const pct = ((c/vals.length)*100).toFixed(1);
+      html += `<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem">
+        <span style="font-family:var(--mono);color:var(--text);min-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(v)}">${escHtml(v)}</span>
+        <span style="color:var(--muted)">${c}×</span>
+        <div style="flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--accent);border-radius:3px"></div></div>
+        <span style="color:var(--muted);font-size:0.72rem">${pct}%</span>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  out.innerHTML = html;
+}
+
+// ── Filter rows UI ─────────────────────────────────────────────────────────
+function buildFilterRowOptions() {
+  document.getElementById('filterRows').innerHTML = '';
+}
+
+function addFilterRow() {
+  const container = document.getElementById('filterRows');
+  const div = document.createElement('div');
+  div.className = 'filter-row filter-row-item';
+  const colOpts = headers.map(h => `<option value="${escHtml(h)}">${escHtml(h)}</option>`).join('');
+  div.innerHTML = `
+    <select class="filter-col">${colOpts}</select>
+    <select class="filter-op">
+      <option value="contains">contains</option>
+      <option value="not_contains">does not contain</option>
+      <option value="equals">equals</option>
+      <option value="starts">starts with</option>
+      <option value="ends">ends with</option>
+      <option value="empty">is empty</option>
+      <option value="not_empty">is not empty</option>
+    </select>
+    <input type="text" class="filter-val" placeholder="value…">
+    <button class="del" onclick="this.parentElement.remove();applyFilters()">✕</button>
+  `;
+  container.appendChild(div);
+}
+
+function clearFilters() {
+  document.getElementById('filterRows').innerHTML = '';
+  document.getElementById('searchBox').value = '';
+  applyFilters();
+}
+
+// ── Dedup ──────────────────────────────────────────────────────────────────
+function buildDedupCheckboxes() {
+  const el = document.getElementById('dedupCols');
+  el.innerHTML = headers.map(h => `
+    <label class="col-check-label">
+      <input type="checkbox" value="${escHtml(h)}"> <span>${escHtml(h)}</span>
+    </label>`).join('');
+}
+
+function getSelectedDedupCols() {
+  const checked = [...document.querySelectorAll('#dedupCols input:checked')].map(i => i.value);
+  return checked.length ? checked : headers;
+}
+
+function findDups() {
+  const cols = getSelectedDedupCols();
+  const seen = new Set(); let dups = 0;
+  allRows.forEach(row => {
+    const key = cols.map(h => row[h] ?? '').join('\x00');
+    if (seen.has(key)) dups++;
+    else seen.add(key);
+  });
+  document.getElementById('dedupResult').textContent = `Found ${dups} duplicate row(s) out of ${allRows.length} total (checking ${cols.length} column(s)).`;
+}
+
+function runDedup() {
+  const cols = getSelectedDedupCols();
+  const seen = new Set(); const deduped = [];
+  allRows.forEach(row => {
+    const key = cols.map(h => row[h] ?? '').join('\x00');
+    if (!seen.has(key)) { seen.add(key); deduped.push(row); }
+  });
+  const removed = allRows.length - deduped.length;
+  allRows = deduped;
+  filteredRows = [...allRows];
+  applyFilters();
+  updateStats();
+  document.getElementById('dedupResult').textContent = `✓ Removed ${removed} duplicate(s). ${allRows.length} rows remain.`;
+  toast(`Removed ${removed} duplicates ✓`);
+}
+
+// ── Clear ──────────────────────────────────────────────────────────────────
+function clearData() {
+  allRows = []; headers = []; filteredRows = []; sortCol = null; sortDir = 1; filters = []; fileSize = 0;
+  document.getElementById('pasteArea').value = '';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('emptyState').style.display = '';
+  document.getElementById('fileInput').value = '';
+}
+
+// ── Sample data ────────────────────────────────────────────────────────────
+function loadSample() {
+  const sample = `id,name,email,country,revenue,plan,signup_date
+1,Alice Johnson,alice@example.com,UK,4500,pro,2024-01-15
+2,Bob Smith,bob@example.com,US,12000,enterprise,2024-02-01
+3,Charlie Brown,charlie@example.com,CA,800,free,2024-03-10
+4,Diana Prince,diana@example.com,UK,4500,pro,2024-01-22
+5,Edward Blake,edward@example.com,AU,2200,pro,2024-04-05
+6,Fiona Green,fiona@example.com,US,12000,enterprise,2024-02-14
+7,George Hall,george@example.com,DE,800,free,2024-03-28
+8,Hannah Lee,hannah@example.com,UK,4500,pro,2024-05-01
+9,Ivan Fox,ivan@example.com,US,800,free,2024-05-15
+10,Julia Stone,julia@example.com,CA,4500,pro,2024-06-01
+11,Alice Johnson,alice@example.com,UK,4500,pro,2024-01-15`;
+  document.getElementById('pasteArea').value = sample;
+  fileSize = new Blob([sample]).size;
+  parseCsv(sample);
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────
+function openModal() { document.getElementById('proModal').classList.add('open'); }
+function closeModal() { document.getElementById('proModal').classList.remove('open'); }
+document.getElementById('proModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+</script>
+</body>
+</html>
